@@ -74,6 +74,12 @@ No build tools or dependencies required.
 
 ---
 
+## 🔗 Live Demo
+
+https://ghostmaruko.github.io/Endless-Runner/
+
+---
+
 ## 📱 Responsive Design
 
 The game is fully playable on **desktop and mobile devices**.  
