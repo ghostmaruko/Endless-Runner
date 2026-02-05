@@ -84,3 +84,7 @@ https://ghostmaruko.github.io/Endless-Runner/
 
 The game is fully playable on **desktop and mobile devices**.  
 It supports mouse, keyboard, and touch input for a consistent experience across platforms.
+
+## Note:
+
+Gameplay speed is frame-based and may vary slightly on lower-FPS devices.
