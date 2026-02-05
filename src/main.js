@@ -1,253 +1,206 @@
-// ======================
-// CANVAS SETUP
-// ======================
-const canvas = document.getElementById("gameCanvas");
+const canvas = document.getElementById("game");
 const ctx = canvas.getContext("2d");
 
-// ======================
-// GAME DIMENSIONS
-// ======================
-const GAME_WIDTH = 800;
-const GAME_HEIGHT = 400;
-
-canvas.width = GAME_WIDTH;
-canvas.height = GAME_HEIGHT;
-
-// ======================
-// GROUND & PHYSICS
-// ======================
-const GROUND_Y = 350;
+const GROUND_Y = 250;
 const GRAVITY = 0.6;
-const JUMP_FORCE = -15;
 
-// ======================
-// GAME STATE
-// ======================
-const GameState = {
-  PLAYING: "playing",
-  GAME_OVER: "game_over",
-};
+// ---------- Player ----------
+class Player {
+  constructor(game) {
+    this.game = game;
+    this.width = 40;
+    this.height = 40;
+    this.x = 80;
+    this.y = GROUND_Y - this.height;
+    this.velocityY = 0;
+    this.isJumping = false;
+  }
 
-let currentState = GameState.PLAYING;
+  jump() {
+    if (this.isJumping || this.game.gameOver) return;
 
-// ======================
-// SCORE
-// ======================
-let score = 0;
-let highScore = localStorage.getItem("highScore") || 0;
+    this.velocityY = -12;
+    this.isJumping = true;
+  }
 
-// ======================
-// PLAYER
-// ======================
-const player = {
-  x: 50,
-  y: GROUND_Y,
-  width: 50,
-  height: 50,
-  velocityY: 0,
-  isJumping: false,
-};
+  update() {
+    this.velocityY += GRAVITY;
+    this.y += this.velocityY;
 
-// ======================
-// OBSTACLES
-// ======================
-const obstacles = [];
+    if (this.y >= GROUND_Y - this.height) {
+      this.y = GROUND_Y - this.height;
+      this.velocityY = 0;
+      this.isJumping = false;
+    }
+  }
 
-const OBSTACLE_WIDTH = 40;
-const OBSTACLE_HEIGHT = 60;
-const OBSTACLE_SPEED = 6;
-
-let obstacleSpawnTimer = 0;
-const OBSTACLE_SPAWN_INTERVAL = 1500; // ms
-
-// ======================
-// GAME LOOP
-// ======================
-let lastTime = 0;
-
-function gameLoop(timestamp) {
-  const deltaTime = timestamp - lastTime;
-  lastTime = timestamp;
-
-  update(deltaTime);
-  draw();
-
-  requestAnimationFrame(gameLoop);
+  draw() {
+    ctx.fillStyle = "#222";
+    ctx.fillRect(this.x, this.y, this.width, this.height);
+  }
 }
 
-requestAnimationFrame(gameLoop);
-
-// ======================
-// UPDATE
-// ======================
-function update(deltaTime) {
-  if (currentState !== GameState.PLAYING) return;
-
-  // ---- SCORE ----
-  score += deltaTime * 0.01;
-
-  // ---- PLAYER PHYSICS ----
-  player.velocityY += GRAVITY;
-  player.y += player.velocityY;
-
-  if (player.y > GROUND_Y) {
-    player.y = GROUND_Y;
-    player.velocityY = 0;
-    player.isJumping = false;
+// ---------- Obstacle ----------
+class Obstacle {
+  constructor(speed) {
+    this.width = 30;
+    this.height = 30;
+    this.x = canvas.width;
+    this.y = GROUND_Y - this.height;
+    this.speed = speed;
   }
 
-  // ---- OBSTACLE SPAWN ----
-  obstacleSpawnTimer += deltaTime;
-  if (obstacleSpawnTimer > OBSTACLE_SPAWN_INTERVAL) {
-    spawnObstacle();
-    obstacleSpawnTimer = 0;
+  update() {
+    this.x -= this.speed;
   }
 
-  // ---- OBSTACLE MOVEMENT ----
-  obstacles.forEach((obstacle) => {
-    obstacle.x -= obstacle.speed;
-  });
+  draw() {
+    ctx.fillStyle = "#c0392b";
+    ctx.fillRect(this.x, this.y, this.width, this.height);
+  }
 
-  // ---- COLLISION CHECK ----
-  obstacles.forEach((obstacle) => {
-    if (isColliding(player, obstacle)) {
-      currentState = GameState.GAME_OVER;
+  isOffScreen() {
+    return this.x + this.width < 0;
+  }
+}
 
-      const finalScore = Math.floor(score);
-      if (finalScore > highScore) {
-        highScore = finalScore;
-        localStorage.setItem("highScore", highScore);
+// ---------- Game ----------
+class Game {
+  constructor() {
+    this.resetGame();
+    this.bindEvents();
+    requestAnimationFrame(() => this.loop());
+  }
+
+  resetGame() {
+    this.player = new Player(this);
+    this.obstacles = [];
+    this.speed = 5;
+    this.score = 0;
+    this.gameOver = false;
+
+    this.spawnTimer = 0;
+    this.nextSpawnTime = this.randomSpawnTime();
+  }
+
+  bindEvents() {
+    // SPACE → jump
+    window.addEventListener("keydown", (e) => {
+      if (e.code === "Space") {
+        this.player.jump();
+      }
+    });
+
+    // TAP / CLICK
+    canvas.addEventListener("pointerdown", () => {
+      if (this.gameOver) {
+        this.resetGame();
+        return;
+      }
+      this.player.jump();
+    });
+  }
+
+  randomSpawnTime() {
+    // tra 60 e 150 frame
+    return Math.floor(Math.random() * 90) + 60;
+  }
+
+  spawnObstacle() {
+    this.obstacles.push(new Obstacle(this.speed));
+
+    // spawn multiplo (cluster)
+    if (Math.random() < 0.35) {
+      const extraGap = Math.random() * 40 + 30;
+      const extra = new Obstacle(this.speed);
+      extra.x += extraGap;
+      this.obstacles.push(extra);
+    }
+  }
+
+  update() {
+    if (this.gameOver) return;
+
+    this.player.update();
+
+    this.spawnTimer++;
+    if (this.spawnTimer >= this.nextSpawnTime) {
+      this.spawnObstacle();
+      this.spawnTimer = 0;
+      this.nextSpawnTime = this.randomSpawnTime();
+    }
+
+    this.obstacles.forEach((obs) => obs.update());
+    this.obstacles = this.obstacles.filter((obs) => !obs.isOffScreen());
+
+    this.checkCollisions();
+
+    this.score++;
+    if (this.score % 500 === 0) {
+      this.speed += 0.3;
+    }
+  }
+
+  checkCollisions() {
+    for (const obs of this.obstacles) {
+      if (
+        this.player.x < obs.x + obs.width &&
+        this.player.x + this.player.width > obs.x &&
+        this.player.y < obs.y + obs.height &&
+        this.player.y + this.player.height > obs.y
+      ) {
+        this.gameOver = true;
+        break;
       }
     }
-  });
-
-  // ---- CLEANUP OFF-SCREEN ----
-  for (let i = obstacles.length - 1; i >= 0; i--) {
-    if (obstacles[i].x + obstacles[i].width < 0) {
-      obstacles.splice(i, 1);
-    }
   }
-}
 
-// ======================
-// DRAW
-// ======================
-function draw() {
-  ctx.clearRect(0, 0, GAME_WIDTH, GAME_HEIGHT);
+  drawGround() {
+    ctx.strokeStyle = "#555";
+    ctx.beginPath();
+    ctx.moveTo(0, GROUND_Y);
+    ctx.lineTo(canvas.width, GROUND_Y);
+    ctx.stroke();
+  }
 
-  // ---- SCORE UI ----
-  ctx.fillStyle = "white";
-  ctx.font = "18px Arial";
-  ctx.textAlign = "left";
-  ctx.fillText(`Score: ${Math.floor(score)}`, 20, 30);
-  ctx.fillText(`High Score: ${highScore}`, 20, 55);
+  drawScore() {
+    ctx.fillStyle = "#000";
+    ctx.font = "16px Arial";
+    ctx.fillText(`Score: ${this.score}`, 20, 30);
+  }
 
-  // ---- GAME OVER OVERLAY ----
-  if (currentState === GameState.GAME_OVER) {
+  drawGameOverOverlay() {
     ctx.fillStyle = "rgba(0, 0, 0, 0.6)";
-    ctx.fillRect(0, 0, GAME_WIDTH, GAME_HEIGHT);
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-    ctx.fillStyle = "white";
+    ctx.fillStyle = "#fff";
     ctx.font = "36px Arial";
     ctx.textAlign = "center";
-    ctx.fillText("GAME OVER", GAME_WIDTH / 2, GAME_HEIGHT / 2);
+    ctx.fillText("GAME OVER", canvas.width / 2, 120);
 
     ctx.font = "18px Arial";
-    ctx.fillText(
-      "Press SPACE or click to restart",
-      GAME_WIDTH / 2,
-      GAME_HEIGHT / 2 + 40,
-    );
-    return;
+    ctx.fillText("Tap or click to restart", canvas.width / 2, 160);
+
+    ctx.textAlign = "left";
   }
 
-  // ---- GROUND ----
-  ctx.strokeStyle = "white";
-  ctx.beginPath();
-  ctx.moveTo(0, GROUND_Y + player.height);
-  ctx.lineTo(GAME_WIDTH, GROUND_Y + player.height);
-  ctx.stroke();
+  loop() {
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-  // ---- PLAYER ----
-  ctx.fillStyle = "red";
-  ctx.fillRect(player.x, player.y, player.width, player.height);
+    this.update();
 
-  // ---- OBSTACLES ----
-  obstacles.forEach((obstacle) => {
-    ctx.fillRect(obstacle.x, obstacle.y, obstacle.width, obstacle.height);
-  });
-}
+    this.drawGround();
+    this.player.draw();
+    this.obstacles.forEach((obs) => obs.draw());
+    this.drawScore();
 
-// ======================
-// INPUT
-// ======================
-document.addEventListener("keydown", (e) => {
-  if (currentState === GameState.GAME_OVER) {
-    restartGame();
-    return;
+    if (this.gameOver) {
+      this.drawGameOverOverlay();
+    }
+
+    requestAnimationFrame(() => this.loop());
   }
-
-  if ((e.code === "Space" || e.code === "ArrowUp") && !player.isJumping) {
-    jump();
-  }
-});
-
-document.addEventListener("mousedown", () => {
-  if (currentState === GameState.GAME_OVER) {
-    restartGame();
-    return;
-  }
-
-  if (!player.isJumping) {
-    jump();
-  }
-});
-
-function jump() {
-  player.velocityY = JUMP_FORCE;
-  player.isJumping = true;
 }
 
-// ======================
-// RESTART GAME
-// ======================
-function restartGame() {
-  obstacles.length = 0;
-  obstacleSpawnTimer = 0;
-
-  player.y = GROUND_Y;
-  player.velocityY = 0;
-  player.isJumping = false;
-
-  score = 0;
-  currentState = GameState.PLAYING;
-}
-
-// ======================
-// OBSTACLE FACTORY
-// ======================
-function spawnObstacle() {
-  const difficulty = Math.floor(score / 100);
-
-  const obstacle = {
-    x: GAME_WIDTH,
-    y: GROUND_Y + (player.height - OBSTACLE_HEIGHT),
-    width: OBSTACLE_WIDTH,
-    height: OBSTACLE_HEIGHT,
-    speed: OBSTACLE_SPEED + difficulty,
-  };
-
-  obstacles.push(obstacle);
-}
-
-// ======================
-// COLLISION DETECTION
-// ======================
-function isColliding(a, b) {
-  return (
-    a.x < b.x + b.width &&
-    a.x + a.width > b.x &&
-    a.y < b.y + b.height &&
-    a.y + a.height > b.y
-  );
-}
+// ---------- Start ----------
+new Game();
